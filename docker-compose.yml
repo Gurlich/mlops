@@ -11,9 +11,9 @@ services:
       # Mount your local codebase to the container.
       - .:/$MAGE_CODE_PATH
       # Store the data output on local machine to easily debug (optional).
-      - ~/.mage_data:/$MAGE_CODE_PATH/mage_data
+      - "${PWD}/.mage_data:/$MAGE_CODE_PATH/mage_data"
       # Initial credentials to create an IAM user with limited permissions for deployment.
-      - ~/.aws:/root/.aws
+      - "${PWD}/.aws:/root/.aws"
       # Local machine’s SSH keys to pull and push to your GitHub repository.
       - ~/.ssh:/root/.ssh:ro
       # Local machine’s GitHub configs
@@ -25,6 +25,8 @@ services:
       - magic-database
     stdin_open: true # used for interactive debugging
     tty: true # used for interactive debugging
+# -------------------------------------------------------------------------- 
+
   magic-database:
     image: pgvector/pgvector:0.6.0-pg16
     env_file:
@@ -32,12 +34,72 @@ services:
     ports:
       - 5432:5432
     volumes:
-      - ~/.postgres/data:/var/lib/postgresql/data
+      - "${PWD}/.postgres/data:/var/lib/postgresql/data/"
       # Custom database initialization scripts (optional).
       - ./scripts/database:/docker-entrypoint-initdb.d
     restart: always
     networks:
       - app-network
+# -------------------------------------------------------------------------- 
+  
+  magic-mlflow:
+    env_file:
+      - .env.dev
+    build:
+      context: .
+      dockerfile: mlflow.dockerfile
+    ports:
+      - "5000:5000"
+    volumes:
+      - "${PWD}/mlflow:/home/mlflow/"
+    networks:
+      - app-network
+    depends_on:
+      - magic-database
+      - minio-create-bucket
+    command: mlflow server --backend-store-uri ${MLFLOW_TRACKING_URI} --default-artifact-root s3://mlflow-bucket/ --host 0.0.0.0 --port 5000
+# -------------------------------------------------------------------------- 
+  magic-minio:
+    image: minio/minio
+    env_file:
+      - .env.dev
+    expose:
+      - "9000"
+    ports:
+      - "9000:9000"
+      # MinIO Console is available at http://localhost:9001
+      - "9001:9001"
+    volumes:
+      - "${PWD}/minio_data:/data"
+    environment:
+      MINIO_ROOT_USER: "${AWS_ACCESS_KEY_ID}"
+      MINIO_ROOT_PASSWORD: "${AWS_SECRET_ACCESS_KEY}"
+    healthcheck:
+      test: timeout 5s bash -c ':> /dev/tcp/127.0.0.1/9000' || exit 1
+      interval: 1s
+      timeout: 10s
+      retries: 5
+    networks:
+      - app-network    
+    command: server /data --console-address ":9001" 
+  # command: server /data --console-address ':9001' --address ':9000'
+
+# -------------------------------------------------------------------------- 
+  minio-create-bucket:
+    image: minio/mc
+    depends_on:
+      magic-minio:
+        condition: service_healthy
+  # TODO: rewrite bucket check below
+    entrypoint: >
+      bash -c "
+      mc alias set minio http://magic-minio:9000 ${AWS_ACCESS_KEY_ID} ${AWS_SECRET_ACCESS_KEY} &&
+      if ! mc ls minio | grep --quiet mlflow-bucket; then
+        mc mb minio/mlflow-bucket
+      else
+        echo 'mlflow-bucket already exists'
+      fi
+      "
 networks:
   app-network:
     driver: bridge

@@ -1,5 +1,6 @@
 project_type: standalone
-variables_dir: ~/.mage_data
+# variables_dir: ~/.mage_data
+variables_dir: "${PWD}/.mage_data"
 variables_retention_period: "90d"
 features:
   add_new_block_v2: true
@@ -14,4 +15,5 @@ features:
   notebook_block_output_split_view: true
   operation_history: true
   polars: true
-help_improve_mage: true
+help_improve_mage: false
+project_uuid: 3281aac0f5df42a59cb68e066a764536

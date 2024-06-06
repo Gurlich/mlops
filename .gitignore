@@ -15,8 +15,15 @@ __pycache__/
 docker-compose.override.yml
 logs/
 mage_data/
+.mage_data/
 mlruns/
 secrets/
 terraform.tfstate
 terraform.tfstate.backup
 titanic_clean.csv
+
+experiments/
+data/
+minio_data/
+.postgres/
+mlflow/
